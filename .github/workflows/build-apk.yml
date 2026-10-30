@@ -24,14 +24,14 @@ jobs:
           distribution: 'zulu'
           java-version: '17'
 
-      - name: Install Dependencies and Build Web App
-        run: |
-          npm install
-          npm run build
+      - name: Install Dependencies
+        run: npm install --legacy-peer-deps
+
+      - name: Build Web App
+        run: npm run build
 
       - name: Sync Capacitor to Android
-        run: |
-          npx cap sync android
+        run: npx cap sync android
 
       - name: Make Gradlew Executable
         run: chmod +x android/gradlew
