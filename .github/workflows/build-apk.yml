@@ -27,8 +27,10 @@ jobs:
       - name: Install Dependencies
         run: npm install --legacy-peer-deps
 
-      - name: Build Web App
-        run: npm run build
+      - name: Fix Bin Permissions and Build Web App
+        run: |
+          chmod -R +x node_modules/.bin
+          npx vite build
 
       - name: Sync Capacitor to Android
         run: npx cap sync android
