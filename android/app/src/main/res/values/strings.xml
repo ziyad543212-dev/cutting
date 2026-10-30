@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Panel Cut Optimizer</string>
+    <string name="title_activity_main">Panel Cut Optimizer</string>
+    <string name="package_name">com.ziadalajwoa.panelcutoptimizer</string>
+    <string name="custom_url_scheme">com.ziadalajwoa.panelcutoptimizer</string>
+</resources>
