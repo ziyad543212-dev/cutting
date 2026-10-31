@@ -4,7 +4,8 @@ A browser-based, bilingual, kerf-aware 2D guillotine cutting planner. It accepts
 fractional stock and part dimensions at runtime, automatically calculates the
 number of master sheets needed, compares multiple sorting and placement passes,
 and produces scaled sheet diagrams with edge-to-edge cuts and workshop
-instructions.
+instructions. Each diagram can be opened in a zoomable, scrollable fullscreen
+viewer.
 
 ## Run locally
 
@@ -42,4 +43,8 @@ app, syncs its assets into the Capacitor Android project, runs Gradle
 `src/guillotineSolver.js` exports the pure `solveGuillotineCutting` function.
 Every placement is made by splitting an existing rectangular region with
 full-span cuts. Kerf is removed from the far-side child after each cut; parts
-are never nested inside a region without edge-to-edge cuts.
+are never nested inside a region without edge-to-edge cuts. The solver compares
+area, longest-side, perimeter, and common-edge sorting passes with both split
+orientations. Remnants with both dimensions at least 300 × 200 in the selected
+dimension unit are classified as usable offcuts; smaller remnants are reported
+as scrap.

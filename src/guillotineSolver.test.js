@@ -32,8 +32,65 @@ test("places every requested part and accounts for kerf and offcuts", () => {
       result.stockArea -
         result.usedArea -
         result.kerfWasteArea -
-        result.usableOffcutArea,
+        result.usableOffcutArea -
+        result.scrapArea,
     ) < 1e-7,
+  );
+});
+
+test("classifies only offcuts with at least 300 by 200 dimensions as reusable", () => {
+  const result = solveGuillotineCutting({
+    sheetLength: 1000,
+    sheetWidth: 500,
+    kerf: 5,
+    parts: [
+      { id: "large", length: 600, width: 300, quantity: 1, allowRotation: false },
+    ],
+  });
+
+  assert.ok(result.usableOffcuts.length > 0);
+  assert.ok(result.scrapOffcuts.length > 0);
+  assert.ok(
+    result.usableOffcuts.every(
+      (offcut) => Math.min(offcut.length, offcut.width) >= 200 &&
+        Math.max(offcut.length, offcut.width) >= 300,
+    ),
+  );
+  assert.equal(
+    result.usableOffcutArea,
+    result.usableOffcuts.reduce((area, offcut) => area + offcut.area, 0),
+  );
+  assert.equal(
+    result.scrapArea,
+    result.scrapOffcuts.reduce((area, offcut) => area + offcut.area, 0),
+  );
+  assert.equal(result.wasteArea, result.kerfWasteArea + result.scrapArea);
+  assert.equal(result.wastePercentage, (100 * result.wasteArea) / result.stockArea);
+  assert.ok(
+    Math.abs(
+      result.stockArea -
+        result.usedArea -
+        result.kerfWasteArea -
+        result.usableOffcutArea -
+        result.scrapArea,
+    ) < 1e-7,
+  );
+});
+
+test("chooses the split orientation that produces the largest reusable remnant", () => {
+  const result = solveGuillotineCutting({
+    sheetLength: 1000,
+    sheetWidth: 500,
+    kerf: 5,
+    parts: [
+      { id: "panel", length: 600, width: 300, quantity: 1, allowRotation: false },
+    ],
+  });
+
+  assert.equal(result.sheets[0].cuts[0].axis, "length");
+  assert.deepEqual(
+    [result.largestOffcut.length, result.largestOffcut.width],
+    [395, 500],
   );
 });
 

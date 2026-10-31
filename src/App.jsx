@@ -65,7 +65,7 @@ const translations = {
     usedArea: "Part area",
     usedAreaDetail: "Total area used by parts",
     waste: "Total waste",
-    wasteDetail: "{area} area, including kerf",
+    wasteDetail: "{area} area, including kerf and non-reusable scrap",
     largestOffcut: "Largest offcut",
     none: "None",
     sheetN: "Sheet {n}",
@@ -84,8 +84,18 @@ const translations = {
     cuttingSequence: "Cutting sequence",
     noCuts: "No interior cuts required: the part uses the full sheet.",
     reusableOffcuts: "Reusable offcuts",
+    actualScrap: "Scrap remnants",
+    scrapLoss: "Non-reusable scrap: {area}",
     areaSuffix: "area",
     noOffcuts: "No reusable offcuts.",
+    noScrap: "No scrap remnants.",
+    scrapLabel: "SCRAP {length} × {width}",
+    viewDetails: "Fullscreen / view details",
+    closeDiagram: "Close diagram",
+    zoomIn: "Zoom in",
+    zoomOut: "Zoom out",
+    resetZoom: "Reset zoom",
+    modalHelp: "Scroll or pan to inspect the full-size cutting diagram.",
     offcutLabel: "OFFCUT {length} × {width}",
     crosscut:
       "Crosscut {position} from the left edge of the {length} × {width} section at ({x}, {y}); the blade travels across the full {span} width.",
@@ -153,8 +163,8 @@ const translations = {
     partsPlaced: "تم توزيع {n} قطعة",
     usedArea: "مساحة القطع",
     usedAreaDetail: "المساحة الإجمالية المستخدمة للقطع",
-    waste: "نسبة الهدر",
-    wasteDetail: "{area} مساحة، بما فيها فاقد الشفرة",
+    waste: "إجمالي الهدر",
+    wasteDetail: "{area} مساحة، بما فيها فاقد الشفرة والقصاصات غير القابلة للاستخدام",
     largestOffcut: "أكبر قطعة متبقية",
     none: "لا يوجد",
     sheetN: "اللوح {n}",
@@ -173,8 +183,18 @@ const translations = {
     cuttingSequence: "تسلسل القص",
     noCuts: "لا حاجة لقصات داخلية؛ القطعة تستخدم اللوح بالكامل.",
     reusableOffcuts: "البقايا القابلة للاستخدام",
+    actualScrap: "قصاصات غير قابلة للاستخدام",
+    scrapLoss: "قصاصات غير قابلة للاستخدام: {area}",
     areaSuffix: "مساحة",
     noOffcuts: "لا توجد بقايا قابلة للاستخدام.",
+    noScrap: "لا توجد قصاصات غير قابلة للاستخدام.",
+    scrapLabel: "قصاصات {length} × {width}",
+    viewDetails: "ملء الشاشة / عرض التفاصيل",
+    closeDiagram: "إغلاق المخطط",
+    zoomIn: "تكبير",
+    zoomOut: "تصغير",
+    resetZoom: "إعادة ضبط التكبير",
+    modalHelp: "مرّر أو حرّك لعرض مخطط القص بالحجم الكامل.",
     offcutLabel: "بقايا {length} × {width}",
     crosscut:
       "اقطع عرضياً على بُعد {position} من الحافة اليسرى لقسم {length} × {width} عند ({x}، {y})؛ تمر الشفرة عبر العرض كاملاً ({span}).",
@@ -417,7 +437,15 @@ function PartDiagram({ part, color, fontSize, language, rotatedText, label }) {
   );
 }
 
-function OffcutDiagram({ offcut, fontSize, hatchId, language, label }) {
+function OffcutDiagram({
+  offcut,
+  fontSize,
+  hatchId,
+  scrapHatchId,
+  language,
+  label,
+  scrapLabel,
+}) {
   const canLabel = offcut.length > fontSize * 5 && offcut.width > fontSize * 2.8;
   return (
     <g>
@@ -426,10 +454,10 @@ function OffcutDiagram({ offcut, fontSize, hatchId, language, label }) {
         y={offcut.y}
         width={offcut.length}
         height={offcut.width}
-        fill={`url(#${hatchId})`}
-        stroke="#526a7e"
+        fill={`url(#${offcut.usable ? hatchId : scrapHatchId})`}
+        stroke={offcut.usable ? "#526a7e" : "#8a6470"}
         strokeWidth={Math.max(fontSize * 0.12, 0.7)}
-        strokeDasharray={`${fontSize * 0.45} ${fontSize * 0.35}`}
+        strokeDasharray={offcut.usable ? `${fontSize * 0.45} ${fontSize * 0.35}` : undefined}
         vectorEffect="non-scaling-stroke"
       />
       {canLabel && (
@@ -440,7 +468,7 @@ function OffcutDiagram({ offcut, fontSize, hatchId, language, label }) {
           className="offcut-label"
           fontSize={fontSize * 0.78}
         >
-          {interpolate(label, {
+          {interpolate(offcut.usable ? label : scrapLabel, {
             length: formatNumber(offcut.length, language),
             width: formatNumber(offcut.width, language),
           })}
@@ -458,13 +486,17 @@ function CutDiagram({
   labelByPartId,
   language,
   t,
+  expanded = false,
+  zoom = 1,
 }) {
   const fontSize = Math.max(3, Math.min(20, Math.min(sheetLength, sheetWidth) * 0.028));
   const hatchId = `sheet-${sheet.sheetNumber}-offcut-hatch`;
+  const scrapHatchId = `sheet-${sheet.sheetNumber}-scrap-hatch`;
   const clipId = `sheet-${sheet.sheetNumber}-clip`;
   return (
     <svg
-      className="sheet-diagram"
+      className={expanded ? "sheet-diagram sheet-diagram-expanded" : "sheet-diagram"}
+      style={expanded ? { width: `${960 * zoom}px` } : undefined}
       viewBox={`0 0 ${sheetLength} ${sheetWidth}`}
       role="img"
       aria-label={interpolate(t("sheetN"), { n: sheet.sheetNumber })}
@@ -484,6 +516,20 @@ function CutDiagram({
             x2="0"
             y2={Math.max(3, fontSize * 1.1)}
             stroke="#bdcbd8"
+            strokeWidth={Math.max(0.7, fontSize * 0.11)}
+            vectorEffect="non-scaling-stroke"
+          />
+        </pattern>
+        <pattern
+          id={scrapHatchId}
+          width={Math.max(3, fontSize * 1.1)}
+          height={Math.max(3, fontSize * 1.1)}
+          patternUnits="userSpaceOnUse"
+        >
+          <rect width="100%" height="100%" fill="#f1e9ec" />
+          <path
+            d={`M0 0 L${Math.max(3, fontSize * 1.1)} ${Math.max(3, fontSize * 1.1)}`}
+            stroke="#c7aeb7"
             strokeWidth={Math.max(0.7, fontSize * 0.11)}
             vectorEffect="non-scaling-stroke"
           />
@@ -509,8 +555,10 @@ function CutDiagram({
             offcut={offcut}
             fontSize={fontSize}
             hatchId={hatchId}
+            scrapHatchId={scrapHatchId}
             language={language}
             label={t("offcutLabel")}
+            scrapLabel={t("scrapLabel")}
           />
         ))}
         {sheet.parts.map((part) => (
@@ -587,7 +635,15 @@ function formatCut(cut, language, t) {
   return interpolate(t(cut.axis === "length" ? "crosscut" : "rip"), common);
 }
 
-function SheetPlan({ sheet, result, colorByPartId, labelByPartId, language, t }) {
+function SheetPlan({
+  sheet,
+  result,
+  colorByPartId,
+  labelByPartId,
+  language,
+  t,
+  onOpenDetails,
+}) {
   return (
     <article className="sheet-card print-sheet">
       <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-200 px-5 py-5 sm:px-7">
@@ -620,9 +676,21 @@ function SheetPlan({ sheet, result, colorByPartId, labelByPartId, language, t })
               t={t}
             />
           </div>
+          <button
+            className="button-secondary print-hide mt-3 w-full justify-center sm:w-auto"
+            type="button"
+            onClick={onOpenDetails}
+            title={t("viewDetails")}
+          >
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M8 3H5a2 2 0 0 0-2 2v3m13-5h3a2 2 0 0 1 2 2v3M3 16v3a2 2 0 0 0 2 2h3m13-5v3a2 2 0 0 1-2 2h-3M8 8h8v8H8z" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+            {t("viewDetails")}
+          </button>
           <div className="mt-3 flex flex-wrap gap-x-5 gap-y-2 text-xs text-slate-600">
             <span className="inline-flex items-center gap-2"><i className="legend-part" />{t("part")}</span>
             <span className="inline-flex items-center gap-2"><i className="legend-offcut" />{t("reusable")}</span>
+            <span className="inline-flex items-center gap-2"><i className="legend-scrap" />{t("actualScrap")}</span>
             <span className="inline-flex items-center gap-2"><i className="legend-cut" />{t("kerfLine")}</span>
           </div>
           <div className="mt-4 flex flex-wrap gap-2">
@@ -666,9 +734,9 @@ function SheetPlan({ sheet, result, colorByPartId, labelByPartId, language, t })
             <h5 className="text-xs font-bold uppercase tracking-[0.1em] text-slate-600">
               {t("reusableOffcuts")}
             </h5>
-            {sheet.free.length > 0 ? (
+            {sheet.free.some((offcut) => offcut.usable) ? (
               <ul className="mt-2 space-y-2">
-                {sheet.free.map((offcut) => (
+                {sheet.free.filter((offcut) => offcut.usable).map((offcut) => (
                   <li className="flex justify-between gap-3 text-sm text-slate-700" key={offcut.id}>
                     <span>{formatNumber(offcut.length, language)} × {formatNumber(offcut.width, language)}</span>
                     <span>{formatArea(offcut.length * offcut.width, language)} {t("areaSuffix")}</span>
@@ -679,9 +747,121 @@ function SheetPlan({ sheet, result, colorByPartId, labelByPartId, language, t })
               <p className="mt-2 text-sm text-slate-600">{t("noOffcuts")}</p>
             )}
           </div>
+          <div className="mt-5 border-t border-slate-300 pt-4">
+            <h5 className="text-xs font-bold uppercase tracking-[0.1em] text-slate-600">
+              {t("actualScrap")}
+            </h5>
+            {sheet.free.some((offcut) => !offcut.usable) ? (
+              <ul className="mt-2 space-y-2">
+                {sheet.free.filter((offcut) => !offcut.usable).map((offcut) => (
+                  <li className="flex justify-between gap-3 text-sm text-slate-700" key={offcut.id}>
+                    <span>{formatNumber(offcut.length, language)} × {formatNumber(offcut.width, language)}</span>
+                    <span>{formatArea(offcut.length * offcut.width, language)} {t("areaSuffix")}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="mt-2 text-sm text-slate-600">{t("noScrap")}</p>
+            )}
+          </div>
         </aside>
       </div>
     </article>
+  );
+}
+
+function DiagramModal({
+  sheet,
+  result,
+  colorByPartId,
+  labelByPartId,
+  language,
+  t,
+  zoom,
+  setZoom,
+  onClose,
+}) {
+  if (!sheet) return null;
+
+  return (
+    <div
+      className="diagram-modal-overlay fixed inset-0 z-50 bg-slate-950/95 backdrop-blur-md"
+      onClick={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <section
+        aria-labelledby="diagram-modal-title"
+        aria-modal="true"
+        className="flex h-full flex-col text-white"
+        dir={language === "ar" ? "rtl" : "ltr"}
+        role="dialog"
+      >
+        <header className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-white/15 px-4 py-3 sm:px-7">
+          <div>
+            <h2 className="text-lg font-bold" id="diagram-modal-title">
+              {interpolate(t("sheetN"), { n: sheet.sheetNumber })}
+            </h2>
+            <p className="mt-1 text-xs text-slate-300">{t("modalHelp")}</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              aria-label={t("zoomOut")}
+              className="rounded-lg border border-white/20 px-3 py-2 text-lg hover:bg-white/10 disabled:opacity-40"
+              disabled={zoom <= 0.5}
+              onClick={() => setZoom((current) => Math.max(0.5, current - 0.25))}
+              title={t("zoomOut")}
+              type="button"
+            >
+              −
+            </button>
+            <button
+              className="rounded-lg border border-white/20 px-3 py-2 text-sm hover:bg-white/10"
+              onClick={() => setZoom(1)}
+              title={t("resetZoom")}
+              type="button"
+            >
+              {Math.round(zoom * 100)}%
+            </button>
+            <button
+              aria-label={t("zoomIn")}
+              className="rounded-lg border border-white/20 px-3 py-2 text-lg hover:bg-white/10 disabled:opacity-40"
+              disabled={zoom >= 2.5}
+              onClick={() => setZoom((current) => Math.min(2.5, current + 0.25))}
+              title={t("zoomIn")}
+              type="button"
+            >
+              +
+            </button>
+            <button
+              autoFocus
+              aria-label={t("closeDiagram")}
+              className="ms-2 rounded-lg bg-white/10 px-4 py-2 text-xl font-bold hover:bg-white/20"
+              onClick={onClose}
+              title={t("closeDiagram")}
+              type="button"
+            >
+              ✕
+            </button>
+          </div>
+        </header>
+        <div className="min-h-0 flex-1 overflow-auto p-4 sm:p-7">
+          <div className="w-max min-w-full">
+            <CutDiagram
+              sheet={sheet}
+              sheetLength={result.sheetLength}
+              sheetWidth={result.sheetWidth}
+              colorByPartId={colorByPartId}
+              labelByPartId={labelByPartId}
+              language={language}
+              t={t}
+              expanded
+              zoom={zoom}
+            />
+          </div>
+        </div>
+      </section>
+    </div>
   );
 }
 
@@ -731,6 +911,7 @@ function Summary({ result, language, t }) {
       <div className="col-span-full flex flex-wrap gap-x-5 gap-y-1 px-1 text-xs text-slate-600">
         <span>{interpolate(t("stockArea"), { area: formatArea(result.stockArea, language) })}</span>
         <span>{interpolate(t("usableOffcuts"), { area: formatArea(result.usableOffcutArea, language) })}</span>
+        <span>{interpolate(t("scrapLoss"), { area: formatArea(result.scrapArea, language) })}</span>
         <span>{interpolate(t("kerfLoss"), { area: formatArea(result.kerfWasteArea, language) })}</span>
         <span>{interpolate(t("passes"), { n: result.heuristicPasses })}</span>
       </div>
@@ -793,6 +974,8 @@ export default function App() {
   const [parts, setParts] = useState([newPart(1)]);
   const [nextPartId, setNextPartId] = useState(2);
   const [result, setResult] = useState(null);
+  const [selectedSheet, setSelectedSheet] = useState(null);
+  const [diagramZoom, setDiagramZoom] = useState(1);
   const [error, setError] = useState("");
   const [fieldErrors, setFieldErrors] = useState({});
   const [rowErrors, setRowErrors] = useState({});
@@ -805,12 +988,29 @@ export default function App() {
     document.title = translations[language].documentTitle;
   }, [language]);
 
+  useEffect(() => {
+    if (!selectedSheet) return undefined;
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    function dismissOnEscape(event) {
+      if (event.key === "Escape") setSelectedSheet(null);
+    }
+    document.addEventListener("keydown", dismissOnEscape);
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener("keydown", dismissOnEscape);
+    };
+  }, [selectedSheet]);
+
   function optimize(event) {
     event.preventDefault();
     const validation = validateInput(sheetLength, sheetWidth, kerf, parts, language, t);
     setFieldErrors(validation.errors);
     setRowErrors(validation.rowErrors);
     setResult(null);
+    setSelectedSheet(null);
     setError("");
 
     if (!validation.valid) {
@@ -973,11 +1173,26 @@ export default function App() {
                     labelByPartId={labelByPartId}
                     language={language}
                     t={t}
+                    onOpenDetails={() => {
+                      setDiagramZoom(1);
+                      setSelectedSheet(sheet);
+                    }}
                   />
                 ))}
               </div>
               <p className="pb-2 text-center text-xs text-slate-600">{t("safety")}</p>
             </section>
+            <DiagramModal
+              sheet={selectedSheet}
+              result={result}
+              colorByPartId={colorByPartId}
+              labelByPartId={labelByPartId}
+              language={language}
+              t={t}
+              zoom={diagramZoom}
+              setZoom={setDiagramZoom}
+              onClose={() => setSelectedSheet(null)}
+            />
           </>
         )}
 

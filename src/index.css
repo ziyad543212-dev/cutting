@@ -164,6 +164,24 @@ input {
   filter: drop-shadow(0 3px 4px rgba(15, 23, 42, 0.1));
 }
 
+.sheet-diagram-expanded {
+  max-height: none;
+  height: auto;
+}
+
+.diagram-modal-overlay {
+  animation: diagram-modal-enter 180ms ease-out;
+}
+
+@keyframes diagram-modal-enter {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
 .diagram-label,
 .diagram-dimension,
 .offcut-label,
@@ -194,6 +212,7 @@ input {
 
 .legend-part,
 .legend-offcut,
+.legend-scrap,
 .legend-cut {
   display: inline-block;
   width: 12px;
@@ -209,6 +228,11 @@ input {
 .legend-offcut {
   border: 1px dashed #64748b;
   background: repeating-linear-gradient(135deg, #f3f6f9, #f3f6f9 3px, #cbd5e1 3px, #cbd5e1 4px);
+}
+
+.legend-scrap {
+  border: 1px solid #8a6470;
+  background: repeating-linear-gradient(45deg, #f1e9ec, #f1e9ec 3px, #c7aeb7 3px, #c7aeb7 4px);
 }
 
 .legend-cut {

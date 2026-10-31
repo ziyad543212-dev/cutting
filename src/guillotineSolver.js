@@ -1,4 +1,5 @@
 const EPSILON = 1e-9;
+const MIN_USABLE_OFFCUT = { length: 300, width: 200 };
 
 const SORT_HEURISTICS = [
   {
@@ -16,7 +17,7 @@ const SORT_HEURISTICS = [
     name: "Largest perimeter first",
     sort: (a, b) => b.perimeter - a.perimeter || b.area - a.area,
   },
-  { name: "Matching strip sizes", sort: null },
+  { name: "Side matching / common edge first", sort: null },
 ];
 
 function makeStripComparator(pieces) {
@@ -26,27 +27,33 @@ function makeStripComparator(pieces) {
       counts.set(side, (counts.get(side) ?? 0) + 1);
     }
   }
-  const sharedSide = [...counts.entries()]
-    .filter(([, count]) => count > 1)
-    .sort(([sideA, countA], [sideB, countB]) => countB - countA || sideB - sideA)[0]?.[0];
-
-  if (sharedSide === undefined) {
-    return (a, b) =>
-      a.stripKey.localeCompare(b.stripKey, undefined, { numeric: true }) ||
-      b.area - a.area;
-  }
-
   return (a, b) => {
-    const aMatches = a.length === sharedSide || a.width === sharedSide;
-    const bMatches = b.length === sharedSide || b.width === sharedSide;
-    if (aMatches !== bMatches) return aMatches ? -1 : 1;
-    if (aMatches) {
-      const aOtherSide = a.length === sharedSide ? a.width : a.length;
-      const bOtherSide = b.length === sharedSide ? b.width : b.length;
+    const aSharedSide = [a.length, a.width]
+      .filter((side) => counts.get(side) > 1)
+      .sort((sideA, sideB) => counts.get(sideB) - counts.get(sideA) || sideB - sideA)[0];
+    const bSharedSide = [b.length, b.width]
+      .filter((side) => counts.get(side) > 1)
+      .sort((sideA, sideB) => counts.get(sideB) - counts.get(sideA) || sideB - sideA)[0];
+    const aCount = counts.get(aSharedSide) ?? 0;
+    const bCount = counts.get(bSharedSide) ?? 0;
+    if (aCount !== bCount) return bCount - aCount;
+    if (aSharedSide !== bSharedSide) return (bSharedSide ?? 0) - (aSharedSide ?? 0);
+    if (aSharedSide !== undefined) {
+      const aOtherSide = a.length === aSharedSide ? a.width : a.length;
+      const bOtherSide = b.length === bSharedSide ? b.width : b.length;
       return bOtherSide - aOtherSide || b.area - a.area;
     }
     return b.longestSide - a.longestSide || b.area - a.area;
   };
+}
+
+function isUsableOffcut(length, width) {
+  const longestSide = Math.max(length, width);
+  const shortestSide = Math.min(length, width);
+  return (
+    longestSide + EPSILON >= MIN_USABLE_OFFCUT.length &&
+    shortestSide + EPSILON >= MIN_USABLE_OFFCUT.width
+  );
 }
 
 function assertPositiveFinite(value, label) {
@@ -213,6 +220,13 @@ function makeCandidate(space, piece, pieceLength, pieceWidth, kerf, firstAxis, s
       (largest, item) => Math.max(largest, item.length * item.width),
       0,
     ),
+    largestReusableOffcutArea: offcuts.reduce(
+      (largest, item) =>
+        isUsableOffcut(item.length, item.width)
+          ? Math.max(largest, item.length * item.width)
+          : largest,
+      0,
+    ),
     kerfWaste: cuts.reduce((sum, cut) => sum + kerf * cut.span, 0),
   };
 }
@@ -226,10 +240,12 @@ function compareNumbers(a, b) {
 
 function candidateScore(candidate, placementPolicy) {
   const stable = [candidate.sheetIndex, candidate.space.id];
+  const largestRemnant =
+    candidate.largestReusableOffcutArea || candidate.largestOffcutArea;
   if (placementPolicy === "largest-offcut") {
     return [
+      -largestRemnant,
       candidate.offcuts.length,
-      -candidate.largestOffcutArea,
       candidate.leftoverArea,
       candidate.kerfWaste,
       ...stable,
@@ -237,9 +253,9 @@ function candidateScore(candidate, placementPolicy) {
     ];
   }
   return [
+    -largestRemnant,
     candidate.leftoverArea,
     candidate.offcuts.length,
-    -candidate.largestOffcutArea,
     candidate.kerfWaste,
     ...stable,
     candidate.splitOrder === "length" ? 0 : 1,
@@ -313,7 +329,11 @@ function applyCandidate(sheet, candidate, kerf) {
     "first-near": firstNearId,
   };
   const assignedOffcuts = candidate.offcuts.map((offcut) => {
-    const assigned = { ...offcut, id: sheet.nextSpaceId };
+    const assigned = {
+      ...offcut,
+      id: sheet.nextSpaceId,
+      usable: isUsableOffcut(offcut.length, offcut.width),
+    };
     sheet.nextSpaceId += 1;
     delete assigned.source;
     sheet.free.push(assigned);
@@ -412,20 +432,26 @@ function summarizeLayout(sheets, sheetLength, sheetWidth, kerf) {
     0,
   );
   const stockArea = sheets.length * sheetLength * sheetWidth;
-  const largestOffcut = [...offcuts].sort(
+  const usableOffcuts = offcuts.filter((offcut) => offcut.usable);
+  const scrapOffcuts = offcuts.filter((offcut) => !offcut.usable);
+  const largestOffcut = [...usableOffcuts].sort(
     (a, b) => b.area - a.area || b.length - a.length,
   )[0] ?? null;
+  const wasteArea = kerfWasteArea + scrapOffcuts.reduce((sum, offcut) => sum + offcut.area, 0);
 
   return {
     sheets,
     offcuts,
+    usableOffcuts,
+    scrapOffcuts,
     pieceCount: pieces.length,
     usedArea,
     stockArea,
     kerfWasteArea,
-    usableOffcutArea: offcuts.reduce((sum, offcut) => sum + offcut.area, 0),
-    wasteArea: Math.max(0, stockArea - usedArea),
-    wastePercentage: stockArea ? (100 * (stockArea - usedArea)) / stockArea : 0,
+    usableOffcutArea: usableOffcuts.reduce((sum, offcut) => sum + offcut.area, 0),
+    scrapArea: scrapOffcuts.reduce((sum, offcut) => sum + offcut.area, 0),
+    wasteArea: Math.max(0, wasteArea),
+    wastePercentage: stockArea ? (100 * Math.max(0, wasteArea)) / stockArea : 0,
     largestOffcut,
   };
 }
@@ -435,12 +461,14 @@ function layoutScore(layout) {
     sheet.parts.reduce((sum, part) => sum + part.area, 0),
   );
   const largestOffcutArea = layout.largestOffcut?.area ?? 0;
-  const offcutCount = layout.offcuts.length;
+  const usableOffcutArea = layout.usableOffcutArea;
+  const offcutCount = layout.usableOffcuts.length;
   const kerfWaste = layout.kerfWasteArea;
   return [
     layout.sheets.length,
     ...sheetUse.map((area) => -area),
     -largestOffcutArea,
+    -usableOffcutArea,
     offcutCount,
     kerfWaste,
   ];
